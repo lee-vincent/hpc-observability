@@ -1,0 +1,124 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - awscli
+  - jq
+  - mariadb-server
+  - mariadb-client
+
+write_files:
+  - path: /opt/hpc-obs/scripts/setup-db.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/db-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      MARKER_FILE="/var/lib/mysql/.hpc-obs-initialized"
+      
+      if [[ -f "$MARKER_FILE" ]]; then
+          echo "Database already initialized, skipping..."
+          exit 0
+      fi
+      
+      echo "=== Setting up MariaDB at $(date) ==="
+      
+      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      
+      # Get credentials from SSM
+      DB_PASSWORD=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/password" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      DB_USER=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/user" --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      DB_NAME=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/name" --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      
+      # Configure MariaDB
+      cat > /etc/mysql/mariadb.conf.d/99-slurm.cnf << EOF
+      [mysqld]
+      bind-address = 0.0.0.0
+      innodb_buffer_pool_size = 1024M
+      innodb_log_file_size = 64M
+      innodb_lock_wait_timeout = 900
+      max_allowed_packet = 64M
+      EOF
+      
+      systemctl restart mariadb
+      systemctl enable mariadb
+      
+      # Wait for MariaDB to be ready
+      for i in {1..30}; do
+          if mysqladmin ping &>/dev/null; then
+              break
+          fi
+          echo "Waiting for MariaDB to be ready..."
+          sleep 2
+      done
+      
+      # Create database and user
+      mysql -u root << EOF
+      CREATE DATABASE IF NOT EXISTS $DB_NAME;
+      CREATE USER IF NOT EXISTS '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+      GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+      FLUSH PRIVILEGES;
+      EOF
+      
+      touch "$MARKER_FILE"
+      echo "=== MariaDB setup completed at $(date) ==="
+
+  - path: /etc/systemd/system/node_exporter.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=:9100 \
+        --collector.systemd \
+        --collector.processes
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - mkdir -p /var/log/demo-setup
+  - |
+    exec > >(tee -a /var/log/demo-setup/db-init.log) 2>&1
+    echo "=== DB node initialization started at $(date) ==="
+    
+    # Ensure SSM agent is running
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+    
+    # Install node_exporter
+    NODE_EXPORTER_VERSION="1.7.0"
+    cd /tmp
+    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+    
+    useradd --no-create-home --shell /bin/false node_exporter || true
+    chown node_exporter:node_exporter /usr/local/bin/node_exporter
+    
+    systemctl daemon-reload
+    systemctl enable node_exporter
+    systemctl start node_exporter
+    
+    # Run DB setup
+    /opt/hpc-obs/scripts/setup-db.sh
+    
+    echo "=== DB node initialization completed at $(date) ==="

@@ -1,0 +1,244 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - awscli
+  - jq
+  - docker.io
+  - docker-compose
+  - nginx
+  - munge
+  - libmunge-dev
+  - libmunge2
+  - python3
+  - python3-pip
+  - curl
+  - wget
+
+write_files:
+  - path: /opt/hpc-obs/scripts/setup-bcm.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/bcm-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      MARKER_FILE="/opt/nvidia/bcm/.bcm-initialized"
+      
+      if [[ -f "$MARKER_FILE" ]]; then
+          echo "BCM already initialized, skipping..."
+          exit 0
+      fi
+      
+      echo "=== Setting up NVIDIA Base Command Manager at $(date) ==="
+      
+      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      
+      # Get Munge key from SSM
+      MUNGE_KEY=$(aws ssm get-parameter --name "/hpc-obs/${environment}/munge-key" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      
+      # Setup Munge (for Slurm communication)
+      echo "$MUNGE_KEY" | base64 -d > /etc/munge/munge.key
+      chmod 400 /etc/munge/munge.key
+      chown munge:munge /etc/munge/munge.key
+      systemctl enable munge
+      systemctl restart munge
+      
+      # Enable Docker
+      systemctl enable docker
+      systemctl start docker
+      usermod -aG docker ubuntu
+      
+      # Create BCM directories
+      mkdir -p /opt/nvidia/bcm
+      mkdir -p /var/lib/bcm
+      mkdir -p /etc/bcm
+      
+      # Download and setup BCM
+      # NOTE: BCM requires NVIDIA enterprise license. This script sets up the
+      # infrastructure for BCM but actual BCM installation requires:
+      # 1. Valid NVIDIA enterprise subscription
+      # 2. Access to NVIDIA NGC container registry
+      # 3. BCM license file
+      #
+      # For demo without license, we provide a stub that:
+      # - Sets up the directory structure
+      # - Configures networking
+      # - Provides documentation for manual BCM installation
+      
+      cat > /etc/bcm/bcm-config.yaml << EOF
+      # BCM Configuration Template
+      # Replace with actual BCM configuration after obtaining license
+      cluster:
+        name: ${cluster_name}
+        domain: hpc-obs.internal
+      
+      network:
+        management_interface: eth0
+        
+      slurm:
+        controller: ${controller_ip}
+        enabled: true
+        
+      provisioning:
+        enabled: true
+        pxe_interface: eth0
+      EOF
+      
+      # Create a placeholder service showing BCM status
+      cat > /opt/nvidia/bcm/bcm-status.sh << 'EOFSTATUS'
+      #!/bin/bash
+      echo "=============================================="
+      echo "NVIDIA Base Command Manager - Status"
+      echo "=============================================="
+      echo ""
+      echo "BCM Infrastructure: READY"
+      echo "BCM Software: REQUIRES LICENSE"
+      echo ""
+      echo "To complete BCM installation:"
+      echo "1. Obtain NVIDIA BCM license from NVIDIA Enterprise"
+      echo "2. Login to NGC: docker login nvcr.io"
+      echo "3. Pull BCM containers from NGC"
+      echo "4. Configure /etc/bcm/bcm-config.yaml"
+      echo "5. Start BCM services"
+      echo ""
+      echo "For demo purposes, Slurm is configured directly"
+      echo "on the controller node and is fully functional."
+      echo "=============================================="
+      EOFSTATUS
+      chmod +x /opt/nvidia/bcm/bcm-status.sh
+      
+      # Setup nginx reverse proxy for BCM UI (placeholder)
+      cat > /etc/nginx/sites-available/bcm << 'EOF'
+      server {
+          listen 8081 ssl;
+          server_name _;
+          
+          ssl_certificate /etc/nginx/ssl/bcm.crt;
+          ssl_certificate_key /etc/nginx/ssl/bcm.key;
+          
+          location / {
+              root /var/www/bcm;
+              index index.html;
+          }
+          
+          location /api/ {
+              # Proxy to BCM API when installed
+              return 503;
+          }
+      }
+      EOF
+      
+      # Generate self-signed certificate
+      mkdir -p /etc/nginx/ssl
+      openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /etc/nginx/ssl/bcm.key \
+          -out /etc/nginx/ssl/bcm.crt \
+          -subj "/CN=bcm.hpc-obs.internal"
+      
+      # Create placeholder web page
+      mkdir -p /var/www/bcm
+      cat > /var/www/bcm/index.html << 'EOF'
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>NVIDIA Base Command Manager</title>
+          <style>
+              body { font-family: Arial, sans-serif; margin: 40px; background: #1a1a1a; color: #76b900; }
+              .container { max-width: 800px; margin: 0 auto; }
+              h1 { color: #76b900; }
+              .status { background: #2a2a2a; padding: 20px; border-radius: 8px; margin: 20px 0; }
+              .info { color: #ccc; }
+              code { background: #333; padding: 2px 6px; border-radius: 4px; }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h1>🖥️ NVIDIA Base Command Manager</h1>
+              <div class="status">
+                  <h2>Infrastructure Status: Ready</h2>
+                  <p class="info">BCM infrastructure has been provisioned and is ready for BCM software installation.</p>
+              </div>
+              <div class="status">
+                  <h2>License Required</h2>
+                  <p class="info">BCM software requires an NVIDIA Enterprise license.</p>
+                  <p class="info">Contact NVIDIA for licensing: <a href="https://www.nvidia.com/en-us/data-center/base-command-manager/" style="color:#76b900">nvidia.com/bcm</a></p>
+              </div>
+              <div class="status">
+                  <h2>Current Slurm Status</h2>
+                  <p class="info">Slurm cluster is operational via direct installation.</p>
+                  <p class="info">Controller: <code>${controller_ip}</code></p>
+                  <p class="info">Cluster: <code>${cluster_name}</code></p>
+              </div>
+          </div>
+      </body>
+      </html>
+      EOF
+      
+      ln -sf /etc/nginx/sites-available/bcm /etc/nginx/sites-enabled/
+      rm -f /etc/nginx/sites-enabled/default
+      systemctl enable nginx
+      systemctl restart nginx
+      
+      mkdir -p /opt/nvidia/bcm
+      touch "$MARKER_FILE"
+      echo "=== BCM infrastructure setup completed at $(date) ==="
+
+  - path: /etc/systemd/system/node_exporter.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=:9100 \
+        --collector.systemd \
+        --collector.processes
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - mkdir -p /var/log/demo-setup
+  - |
+    exec > >(tee -a /var/log/demo-setup/bcm-init.log) 2>&1
+    echo "=== BCM node initialization started at $(date) ==="
+    
+    # Ensure SSM agent is running
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+    
+    # Install node_exporter
+    NODE_EXPORTER_VERSION="1.7.0"
+    cd /tmp
+    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+    
+    useradd --no-create-home --shell /bin/false node_exporter || true
+    chown node_exporter:node_exporter /usr/local/bin/node_exporter
+    
+    systemctl daemon-reload
+    systemctl enable node_exporter
+    systemctl start node_exporter
+    
+    # Run BCM setup
+    /opt/hpc-obs/scripts/setup-bcm.sh
+    
+    echo "=== BCM node initialization completed at $(date) ==="

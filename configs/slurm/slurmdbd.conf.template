@@ -1,0 +1,37 @@
+# slurmdbd.conf - Slurm Database Daemon configuration template
+# This is a template; actual config is generated during cloud-init
+# File permissions should be 600, owned by slurm:slurm
+
+AuthType=auth/munge
+DbdHost=${CONTROLLER_HOSTNAME}
+DbdPort=6819
+SlurmUser=slurm
+DebugLevel=info
+LogFile=/var/log/slurm/slurmdbd.log
+PidFile=/var/run/slurm/slurmdbd.pid
+
+# Database connection
+StorageType=accounting_storage/mysql
+StorageHost=${DB_HOST}
+StoragePort=3306
+StorageUser=${DB_USER}
+StoragePass=${DB_PASSWORD}
+StorageLoc=${DB_NAME}
+
+# Performance tuning
+ArchiveEvents=yes
+ArchiveJobs=yes
+ArchiveResvs=yes
+ArchiveSteps=no
+ArchiveSuspend=no
+ArchiveTXN=no
+ArchiveUsage=no
+
+# Purge old records (optional, adjust as needed)
+# PurgeEventAfter=1month
+# PurgeJobAfter=12month
+# PurgeResvAfter=1month
+# PurgeStepAfter=1month
+# PurgeSuspendAfter=1month
+# PurgeTXNAfter=12month
+# PurgeUsageAfter=24month

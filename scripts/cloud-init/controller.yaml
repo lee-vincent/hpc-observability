@@ -1,0 +1,316 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - awscli
+  - jq
+  - munge
+  - libmunge-dev
+  - libmunge2
+  - mariadb-client
+  - build-essential
+  - libmariadb-dev
+  - libpam0g-dev
+  - libhttp-parser-dev
+  - libjson-c-dev
+  - libyaml-dev
+  - libhwloc-dev
+  - liblz4-dev
+  - libfreeipmi-dev
+  - librrd-dev
+  - libipmimonitoring-dev
+  - liblua5.3-dev
+  - libdbus-1-dev
+  - libreadline-dev
+  - man2html
+  - bzip2
+  - python3
+  - python3-pip
+
+write_files:
+  - path: /opt/hpc-obs/scripts/setup-slurm-controller.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/slurm-controller-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      MARKER_FILE="/etc/slurm/.controller-initialized"
+      SLURM_VERSION="23.11.10"
+      
+      if [[ -f "$MARKER_FILE" ]]; then
+          echo "Slurm controller already initialized, skipping..."
+          exit 0
+      fi
+      
+      echo "=== Setting up Slurm Controller at $(date) ==="
+      
+      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      INSTANCE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+      
+      # Get credentials from SSM
+      MUNGE_KEY=$(aws ssm get-parameter --name "/hpc-obs/${environment}/munge-key" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      DB_PASSWORD=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/password" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      DB_USER=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/user" --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      DB_NAME=$(aws ssm get-parameter --name "/hpc-obs/${environment}/db/name" --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      
+      # Setup Munge
+      echo "$MUNGE_KEY" | base64 -d > /etc/munge/munge.key
+      chmod 400 /etc/munge/munge.key
+      chown munge:munge /etc/munge/munge.key
+      systemctl enable munge
+      systemctl restart munge
+      
+      # Create slurm user
+      groupadd -g 64030 slurm || true
+      useradd -u 64030 -g slurm -s /bin/false slurm || true
+      
+      # Download and build Slurm
+      cd /tmp
+      if [[ ! -f "slurm-$${SLURM_VERSION}.tar.bz2" ]]; then
+          wget -q https://download.schedmd.com/slurm/slurm-$${SLURM_VERSION}.tar.bz2
+      fi
+      tar xjf slurm-$${SLURM_VERSION}.tar.bz2
+      cd slurm-$${SLURM_VERSION}
+      
+      ./configure --prefix=/usr --sysconfdir=/etc/slurm --with-munge --enable-pam
+      make -j$(nproc)
+      make install
+      
+      # Create directories
+      mkdir -p /etc/slurm /var/spool/slurm/ctld /var/spool/slurm/d /var/log/slurm /var/run/slurm
+      chown -R slurm:slurm /var/spool/slurm /var/log/slurm /var/run/slurm
+      
+      # Generate slurm.conf
+      cat > /etc/slurm/slurm.conf << EOF
+      ClusterName=${cluster_name}
+      SlurmctldHost=$INSTANCE_IP
+      
+      MpiDefault=none
+      ProctrackType=proctrack/cgroup
+      ReturnToService=2
+      SlurmctldPidFile=/var/run/slurm/slurmctld.pid
+      SlurmdPidFile=/var/run/slurm/slurmd.pid
+      SlurmdSpoolDir=/var/spool/slurm/d
+      SlurmUser=slurm
+      StateSaveLocation=/var/spool/slurm/ctld
+      SwitchType=switch/none
+      TaskPlugin=task/affinity,task/cgroup
+      
+      # Scheduling
+      SchedulerType=sched/backfill
+      SelectType=select/cons_tres
+      SelectTypeParameters=CR_Core_Memory
+      
+      # Logging
+      SlurmctldDebug=info
+      SlurmctldLogFile=/var/log/slurm/slurmctld.log
+      SlurmdDebug=info
+      SlurmdLogFile=/var/log/slurm/slurmd.log
+      
+      # Accounting
+      AccountingStorageType=accounting_storage/slurmdbd
+      AccountingStorageHost=$INSTANCE_IP
+      AccountingStoragePort=6819
+      JobAcctGatherType=jobacct_gather/cgroup
+      JobAcctGatherFrequency=30
+      
+      # GPU support
+      GresTypes=gpu
+      
+      # Timeouts
+      InactiveLimit=0
+      KillWait=30
+      MinJobAge=300
+      SlurmctldTimeout=120
+      SlurmdTimeout=300
+      Waittime=0
+      
+      # Compute nodes - will be populated dynamically
+      NodeName=DEFAULT CPUs=4 RealMemory=15000 State=UNKNOWN
+      PartitionName=gpu Nodes=ALL Default=YES MaxTime=INFINITE State=UP
+      EOF
+      
+      # Generate slurmdbd.conf
+      cat > /etc/slurm/slurmdbd.conf << EOF
+      AuthType=auth/munge
+      DbdHost=$INSTANCE_IP
+      DbdPort=6819
+      SlurmUser=slurm
+      DebugLevel=info
+      LogFile=/var/log/slurm/slurmdbd.log
+      PidFile=/var/run/slurm/slurmdbd.pid
+      StorageType=accounting_storage/mysql
+      StorageHost=${db_ip}
+      StoragePort=3306
+      StorageUser=$DB_USER
+      StoragePass=$DB_PASSWORD
+      StorageLoc=$DB_NAME
+      EOF
+      chmod 600 /etc/slurm/slurmdbd.conf
+      chown slurm:slurm /etc/slurm/slurmdbd.conf
+      
+      # Generate cgroup.conf
+      cat > /etc/slurm/cgroup.conf << EOF
+      CgroupAutomount=yes
+      ConstrainCores=yes
+      ConstrainRAMSpace=yes
+      ConstrainDevices=yes
+      EOF
+      
+      # Generate gres.conf
+      cat > /etc/slurm/gres.conf << EOF
+      # GPU configuration - compute nodes will have AutoDetect
+      AutoDetect=nvml
+      EOF
+      
+      # Copy systemd units
+      cp /tmp/slurm-$${SLURM_VERSION}/etc/slurmctld.service /etc/systemd/system/
+      cp /tmp/slurm-$${SLURM_VERSION}/etc/slurmdbd.service /etc/systemd/system/
+      
+      # Fix systemd unit files
+      sed -i 's|/var/run/slurmctld.pid|/var/run/slurm/slurmctld.pid|g' /etc/systemd/system/slurmctld.service
+      sed -i 's|/var/run/slurmdbd.pid|/var/run/slurm/slurmdbd.pid|g' /etc/systemd/system/slurmdbd.service
+      
+      systemctl daemon-reload
+      
+      # Wait for DB to be ready
+      echo "Waiting for database..."
+      for i in {1..60}; do
+          if mysql -h ${db_ip} -u "$DB_USER" -p"$DB_PASSWORD" -e "SELECT 1" &>/dev/null; then
+              echo "Database is ready"
+              break
+          fi
+          echo "Waiting for database... attempt $i"
+          sleep 5
+      done
+      
+      # Start slurmdbd first
+      systemctl enable slurmdbd
+      systemctl start slurmdbd
+      sleep 5
+      
+      # Initialize cluster in accounting
+      sacctmgr -i add cluster ${cluster_name} || true
+      
+      # Start slurmctld
+      systemctl enable slurmctld
+      systemctl start slurmctld
+      
+      touch "$MARKER_FILE"
+      echo "=== Slurm Controller setup completed at $(date) ==="
+
+  - path: /etc/systemd/system/node_exporter.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=:9100 \
+        --collector.systemd \
+        --collector.processes
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/slurm_exporter.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Slurm Exporter
+      After=network-online.target slurmctld.service
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=slurm
+      Group=slurm
+      ExecStart=/usr/local/bin/slurm_exporter
+      Restart=always
+      RestartSec=10
+      
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /opt/hpc-obs/scripts/install-slurm-exporter.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      cd /tmp
+      
+      # Install Go if not present
+      if ! command -v go &>/dev/null; then
+          wget -q https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+          rm -rf /usr/local/go
+          tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+          export PATH=$PATH:/usr/local/go/bin
+      fi
+      
+      export PATH=$PATH:/usr/local/go/bin
+      
+      # Clone and build prometheus-slurm-exporter
+      if [[ ! -d "prometheus-slurm-exporter" ]]; then
+          git clone https://github.com/vpenso/prometheus-slurm-exporter.git
+      fi
+      cd prometheus-slurm-exporter
+      go build -o slurm_exporter
+      cp slurm_exporter /usr/local/bin/
+      chmod +x /usr/local/bin/slurm_exporter
+      
+      systemctl daemon-reload
+      systemctl enable slurm_exporter
+      systemctl start slurm_exporter
+
+runcmd:
+  - mkdir -p /var/log/demo-setup
+  - |
+    exec > >(tee -a /var/log/demo-setup/controller-init.log) 2>&1
+    echo "=== Controller initialization started at $(date) ==="
+    
+    # Ensure SSM agent is running
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+    
+    # Install node_exporter
+    NODE_EXPORTER_VERSION="1.7.0"
+    cd /tmp
+    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+    
+    useradd --no-create-home --shell /bin/false node_exporter || true
+    chown node_exporter:node_exporter /usr/local/bin/node_exporter
+    
+    systemctl daemon-reload
+    systemctl enable node_exporter
+    systemctl start node_exporter
+    
+    # Install git for slurm exporter build
+    apt-get install -y git
+    
+    # Run Slurm controller setup
+    /opt/hpc-obs/scripts/setup-slurm-controller.sh
+    
+    # Install Slurm exporter
+    /opt/hpc-obs/scripts/install-slurm-exporter.sh
+    
+    echo "=== Controller initialization completed at $(date) ==="

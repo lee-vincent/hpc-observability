@@ -1,0 +1,39 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - awscli
+  - jq
+  - htop
+  - vim
+  - tmux
+  - net-tools
+  - dnsutils
+  - curl
+  - wget
+
+write_files:
+  - path: /etc/profile.d/hpc-env.sh
+    permissions: '0644'
+    content: |
+      export AWS_DEFAULT_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+
+runcmd:
+  - mkdir -p /var/log/demo-setup
+  - |
+    exec > >(tee -a /var/log/demo-setup/bastion-init.log) 2>&1
+    echo "=== Bastion initialization started at $(date) ==="
+    
+    # Ensure SSM agent is running
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+    
+    # Set timezone
+    timedatectl set-timezone UTC
+    
+    echo "=== Bastion initialization completed at $(date) ==="

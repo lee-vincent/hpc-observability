@@ -1,0 +1,54 @@
+# Example Terraform variables file
+# Copy to terraform.tfvars and customize
+
+# AWS Region
+region = "us-east-1"
+
+# Environment name (used in resource naming)
+environment = "demo"
+
+# Project name prefix
+project_name = "hpc-obs"
+
+# VPC CIDR block
+vpc_cidr = "10.0.0.0/16"
+
+# IMPORTANT: Restrict to your IP for security
+# Get your IP: curl -s https://checkip.amazonaws.com
+allowed_cidr = ["YOUR_IP/32"]
+
+# SSH key pair name (optional if using SSM)
+# keypair_name = "my-key"
+
+# Use SSM Session Manager for access (recommended)
+use_ssm = true
+
+# Instance types for management hosts
+bastion_instance_type       = "t3.small"
+bcm_instance_type           = "t3.large"
+controller_instance_type    = "t3.large"
+db_instance_type            = "t3.medium"
+observability_instance_type = "t3.large"
+
+# GPU compute configuration
+compute_instance_type    = "g4dn.xlarge"  # NVIDIA T4
+compute_node_count       = 2
+compute_node_min         = 0
+compute_node_max         = 4
+compute_root_volume_size = 100
+
+# Database volume size (GB)
+db_volume_size = 50
+
+# Slurm cluster name
+slurm_cluster_name = "hpc-demo"
+
+# Cost optimization: use spot instances for compute
+enable_spot_instances = false
+spot_max_price        = ""  # Empty = on-demand price cap
+
+# Additional tags
+tags = {
+  Owner       = "your-name"
+  CostCenter  = "your-cost-center"
+}

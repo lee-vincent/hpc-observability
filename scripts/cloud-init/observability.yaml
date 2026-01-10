@@ -1,0 +1,469 @@
+#cloud-config
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - awscli
+  - jq
+  - curl
+  - wget
+  - apt-transport-https
+  - software-properties-common
+
+write_files:
+  - path: /opt/hpc-obs/scripts/setup-prometheus.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/prometheus-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      PROMETHEUS_VERSION="2.48.0"
+      
+      echo "=== Setting up Prometheus at $(date) ==="
+      
+      # Create prometheus user
+      useradd --no-create-home --shell /bin/false prometheus || true
+      
+      # Create directories
+      mkdir -p /etc/prometheus /var/lib/prometheus
+      chown prometheus:prometheus /etc/prometheus /var/lib/prometheus
+      
+      # Download Prometheus
+      cd /tmp
+      wget -q https://github.com/prometheus/prometheus/releases/download/v$${PROMETHEUS_VERSION}/prometheus-$${PROMETHEUS_VERSION}.linux-amd64.tar.gz
+      tar xzf prometheus-$${PROMETHEUS_VERSION}.linux-amd64.tar.gz
+      
+      cp prometheus-$${PROMETHEUS_VERSION}.linux-amd64/prometheus /usr/local/bin/
+      cp prometheus-$${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
+      chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool
+      
+      cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/consoles /etc/prometheus/
+      cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/console_libraries /etc/prometheus/
+      chown -R prometheus:prometheus /etc/prometheus
+      
+      echo "=== Prometheus installation completed at $(date) ==="
+
+  - path: /opt/hpc-obs/scripts/setup-grafana.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/grafana-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      echo "=== Setting up Grafana at $(date) ==="
+      
+      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      GRAFANA_PASSWORD=$(aws ssm get-parameter --name "/hpc-obs/${environment}/grafana/admin-password" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      
+      # Add Grafana repository
+      wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
+      echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main" | tee /etc/apt/sources.list.d/grafana.list
+      apt-get update
+      apt-get install -y grafana
+      
+      # Configure Grafana
+      cat > /etc/grafana/grafana.ini << EOF
+      [server]
+      http_addr = 0.0.0.0
+      http_port = 3000
+      
+      [security]
+      admin_user = admin
+      admin_password = $GRAFANA_PASSWORD
+      
+      [users]
+      allow_sign_up = false
+      
+      [auth.anonymous]
+      enabled = false
+      
+      [dashboards]
+      default_home_dashboard_path = /var/lib/grafana/dashboards/cluster-overview.json
+      EOF
+      
+      # Enable provisioning directories
+      mkdir -p /etc/grafana/provisioning/datasources
+      mkdir -p /etc/grafana/provisioning/dashboards
+      mkdir -p /var/lib/grafana/dashboards
+      
+      systemctl daemon-reload
+      systemctl enable grafana-server
+      systemctl start grafana-server
+      
+      echo "=== Grafana installation completed at $(date) ==="
+
+  - path: /opt/hpc-obs/scripts/setup-alertmanager.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      LOG_FILE="/var/log/demo-setup/alertmanager-setup.log"
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a "$LOG_FILE") 2>&1
+      
+      ALERTMANAGER_VERSION="0.26.0"
+      
+      echo "=== Setting up Alertmanager at $(date) ==="
+      
+      # Create user
+      useradd --no-create-home --shell /bin/false alertmanager || true
+      
+      # Create directories
+      mkdir -p /etc/alertmanager /var/lib/alertmanager
+      chown alertmanager:alertmanager /etc/alertmanager /var/lib/alertmanager
+      
+      # Download
+      cd /tmp
+      wget -q https://github.com/prometheus/alertmanager/releases/download/v$${ALERTMANAGER_VERSION}/alertmanager-$${ALERTMANAGER_VERSION}.linux-amd64.tar.gz
+      tar xzf alertmanager-$${ALERTMANAGER_VERSION}.linux-amd64.tar.gz
+      
+      cp alertmanager-$${ALERTMANAGER_VERSION}.linux-amd64/alertmanager /usr/local/bin/
+      cp alertmanager-$${ALERTMANAGER_VERSION}.linux-amd64/amtool /usr/local/bin/
+      chown alertmanager:alertmanager /usr/local/bin/alertmanager /usr/local/bin/amtool
+      
+      # Default config
+      cat > /etc/alertmanager/alertmanager.yml << 'EOF'
+      global:
+        resolve_timeout: 5m
+      
+      route:
+        group_by: ['alertname', 'cluster', 'service']
+        group_wait: 10s
+        group_interval: 10s
+        repeat_interval: 1h
+        receiver: 'default'
+      
+      receivers:
+        - name: 'default'
+          # Configure email/slack/pagerduty here
+      
+      inhibit_rules:
+        - source_match:
+            severity: 'critical'
+          target_match:
+            severity: 'warning'
+          equal: ['alertname', 'cluster', 'service']
+      EOF
+      chown alertmanager:alertmanager /etc/alertmanager/alertmanager.yml
+      
+      systemctl daemon-reload
+      systemctl enable alertmanager
+      systemctl start alertmanager
+      
+      echo "=== Alertmanager installation completed at $(date) ==="
+
+  - path: /etc/prometheus/prometheus.yml
+    permissions: '0644'
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+        external_labels:
+          cluster: '${project_name}'
+          environment: '${environment}'
+      
+      alerting:
+        alertmanagers:
+          - static_configs:
+              - targets:
+                  - localhost:9093
+      
+      rule_files:
+        - /etc/prometheus/rules/*.yml
+      
+      scrape_configs:
+        - job_name: 'prometheus'
+          static_configs:
+            - targets: ['localhost:9090']
+      
+        - job_name: 'node_exporter'
+          ec2_sd_configs:
+            - region: us-east-1
+              port: 9100
+              filters:
+                - name: tag:Project
+                  values: ['hpc-obs']
+          relabel_configs:
+            - source_labels: [__meta_ec2_tag_Name]
+              target_label: instance_name
+            - source_labels: [__meta_ec2_tag_Role]
+              target_label: role
+            - source_labels: [__meta_ec2_private_ip]
+              target_label: __address__
+              replacement: '$${1}:9100'
+      
+        - job_name: 'dcgm_exporter'
+          ec2_sd_configs:
+            - region: us-east-1
+              port: 9400
+              filters:
+                - name: tag:Role
+                  values: ['compute']
+          relabel_configs:
+            - source_labels: [__meta_ec2_tag_Name]
+              target_label: instance_name
+            - source_labels: [__meta_ec2_private_ip]
+              target_label: __address__
+              replacement: '$${1}:9400'
+      
+        - job_name: 'slurm_exporter'
+          static_configs:
+            - targets: ['${controller_ip}:9341']
+              labels:
+                role: controller
+
+  - path: /etc/prometheus/rules/alerts.yml
+    permissions: '0644'
+    content: |
+      groups:
+        - name: node_alerts
+          rules:
+            - alert: NodeDown
+              expr: up{job="node_exporter"} == 0
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Node {{ $labels.instance_name }} is down"
+                description: "Node exporter on {{ $labels.instance_name }} has been unreachable for more than 2 minutes"
+      
+            - alert: HighCPUUsage
+              expr: 100 - (avg by(instance_name) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High CPU usage on {{ $labels.instance_name }}"
+                description: "CPU usage is above 90% for more than 5 minutes"
+      
+            - alert: HighMemoryUsage
+              expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 90
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "High memory usage on {{ $labels.instance_name }}"
+      
+        - name: gpu_alerts
+          rules:
+            - alert: GPUDown
+              expr: up{job="dcgm_exporter"} == 0
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "GPU metrics unavailable on {{ $labels.instance_name }}"
+      
+            - alert: GPUHighTemperature
+              expr: DCGM_FI_DEV_GPU_TEMP > 85
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "GPU temperature high on {{ $labels.instance_name }}"
+                description: "GPU temperature is {{ $value }}°C"
+      
+            - alert: GPUHighTemperatureCritical
+              expr: DCGM_FI_DEV_GPU_TEMP > 95
+              for: 1m
+              labels:
+                severity: critical
+              annotations:
+                summary: "GPU temperature critical on {{ $labels.instance_name }}"
+      
+            - alert: GPUMemoryLow
+              expr: (DCGM_FI_DEV_FB_FREE / DCGM_FI_DEV_FB_TOTAL) * 100 < 10
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "GPU memory low on {{ $labels.instance_name }}"
+      
+            - alert: GPUECCErrors
+              expr: increase(DCGM_FI_DEV_ECC_DBE_VOL_TOTAL[1h]) > 0
+              labels:
+                severity: critical
+              annotations:
+                summary: "GPU ECC double-bit errors detected on {{ $labels.instance_name }}"
+      
+        - name: slurm_alerts
+          rules:
+            - alert: SlurmControllerDown
+              expr: up{job="slurm_exporter"} == 0
+              for: 2m
+              labels:
+                severity: critical
+              annotations:
+                summary: "Slurm controller is down"
+      
+            - alert: SlurmQueueBacklog
+              expr: slurm_queue_pending > 100
+              for: 30m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Large Slurm queue backlog"
+                description: "{{ $value }} jobs pending for more than 30 minutes"
+      
+            - alert: SlurmNodesDown
+              expr: slurm_nodes_down > 0
+              for: 5m
+              labels:
+                severity: warning
+              annotations:
+                summary: "{{ $value }} Slurm nodes are down"
+
+  - path: /etc/grafana/provisioning/datasources/prometheus.yml
+    permissions: '0644'
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://localhost:9090
+          isDefault: true
+          editable: false
+
+  - path: /etc/grafana/provisioning/dashboards/dashboards.yml
+    permissions: '0644'
+    content: |
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 30
+          options:
+            path: /var/lib/grafana/dashboards
+
+  - path: /etc/systemd/system/prometheus.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Monitoring System
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=prometheus
+      Group=prometheus
+      ExecStart=/usr/local/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.path=/var/lib/prometheus/ \
+        --web.console.templates=/etc/prometheus/consoles \
+        --web.console.libraries=/etc/prometheus/console_libraries \
+        --web.listen-address=0.0.0.0:9090 \
+        --web.enable-lifecycle \
+        --storage.tsdb.retention.time=30d
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/alertmanager.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Alertmanager
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=alertmanager
+      Group=alertmanager
+      ExecStart=/usr/local/bin/alertmanager \
+        --config.file=/etc/alertmanager/alertmanager.yml \
+        --storage.path=/var/lib/alertmanager/ \
+        --web.listen-address=0.0.0.0:9093
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/node_exporter.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Prometheus Node Exporter
+      After=network-online.target
+      Wants=network-online.target
+      
+      [Service]
+      Type=simple
+      User=node_exporter
+      Group=node_exporter
+      ExecStart=/usr/local/bin/node_exporter \
+        --web.listen-address=:9100 \
+        --collector.systemd \
+        --collector.processes
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - mkdir -p /var/log/demo-setup /etc/prometheus/rules
+  - |
+    exec > >(tee -a /var/log/demo-setup/observability-init.log) 2>&1
+    echo "=== Observability node initialization started at $(date) ==="
+    
+    # Ensure SSM agent is running
+    systemctl enable amazon-ssm-agent
+    systemctl start amazon-ssm-agent
+    
+    # Install node_exporter
+    NODE_EXPORTER_VERSION="1.7.0"
+    cd /tmp
+    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+    
+    useradd --no-create-home --shell /bin/false node_exporter || true
+    chown node_exporter:node_exporter /usr/local/bin/node_exporter
+    
+    systemctl daemon-reload
+    systemctl enable node_exporter
+    systemctl start node_exporter
+    
+    # Setup Prometheus
+    /opt/hpc-obs/scripts/setup-prometheus.sh
+    
+    # Setup Grafana
+    /opt/hpc-obs/scripts/setup-grafana.sh
+    
+    # Setup Alertmanager
+    /opt/hpc-obs/scripts/setup-alertmanager.sh
+    
+    # Update prometheus config with correct region
+    AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+    sed -i "s/region: us-east-1/region: $AWS_REGION/g" /etc/prometheus/prometheus.yml
+    
+    # Fix ownership
+    chown -R prometheus:prometheus /etc/prometheus /var/lib/prometheus
+    
+    # Start services
+    systemctl daemon-reload
+    systemctl enable prometheus
+    systemctl start prometheus
+    
+    echo "=== Observability node initialization completed at $(date) ==="

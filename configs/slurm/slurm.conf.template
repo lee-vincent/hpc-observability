@@ -1,0 +1,56 @@
+# slurm.conf - Slurm configuration template
+# This is a template; actual config is generated during cloud-init
+
+ClusterName=${CLUSTER_NAME}
+SlurmctldHost=${CONTROLLER_HOSTNAME}
+
+# Process tracking
+MpiDefault=none
+ProctrackType=proctrack/cgroup
+ReturnToService=2
+
+# Paths
+SlurmctldPidFile=/var/run/slurm/slurmctld.pid
+SlurmdPidFile=/var/run/slurm/slurmd.pid
+SlurmdSpoolDir=/var/spool/slurm/d
+SlurmUser=slurm
+StateSaveLocation=/var/spool/slurm/ctld
+SwitchType=switch/none
+
+# Task management
+TaskPlugin=task/affinity,task/cgroup
+
+# Scheduling
+SchedulerType=sched/backfill
+SelectType=select/cons_tres
+SelectTypeParameters=CR_Core_Memory
+
+# Logging
+SlurmctldDebug=info
+SlurmctldLogFile=/var/log/slurm/slurmctld.log
+SlurmdDebug=info
+SlurmdLogFile=/var/log/slurm/slurmd.log
+
+# Accounting
+AccountingStorageType=accounting_storage/slurmdbd
+AccountingStorageHost=${CONTROLLER_HOSTNAME}
+AccountingStoragePort=6819
+JobAcctGatherType=jobacct_gather/cgroup
+JobAcctGatherFrequency=30
+
+# GPU support
+GresTypes=gpu
+
+# Timeouts
+InactiveLimit=0
+KillWait=30
+MinJobAge=300
+SlurmctldTimeout=120
+SlurmdTimeout=300
+Waittime=0
+
+# Node definitions (populated dynamically)
+NodeName=DEFAULT CPUs=4 RealMemory=15000 State=UNKNOWN
+
+# Partition definitions
+PartitionName=gpu Nodes=ALL Default=YES MaxTime=INFINITE State=UP
