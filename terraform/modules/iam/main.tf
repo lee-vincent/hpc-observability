@@ -182,6 +182,33 @@ resource "aws_iam_role_policy_attachment" "bcm_ec2_describe" {
   policy_arn = aws_iam_policy.ec2_describe.arn
 }
 
+data "aws_iam_policy_document" "bcm_s3_read" {
+  statement {
+    sid = "ReadBCMBucket"
+    actions = [
+      "s3:GetObject",
+      "s3:ListBucket"
+    ]
+    resources = [
+      "arn:aws:s3:::bcm10",
+      "arn:aws:s3:::bcm10/*"
+    ]
+  }
+}
+
+resource "aws_iam_policy" "bcm_s3_read" {
+  name        = "${var.name_prefix}-bcm-s3-read"
+  description = "Allow BCM instance to read BCM ISO from S3"
+  policy      = data.aws_iam_policy_document.bcm_s3_read.json
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "bcm_s3_read" {
+  role       = aws_iam_role.bcm.name
+  policy_arn = aws_iam_policy.bcm_s3_read.arn
+}
+
 resource "aws_iam_instance_profile" "bastion" {
   name = "${var.name_prefix}-bastion-profile"
   role = aws_iam_role.bastion.name

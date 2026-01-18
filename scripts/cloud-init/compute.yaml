@@ -80,7 +80,7 @@ write_files:
       exec > >(tee -a "$LOG_FILE") 2>&1
       
       MARKER_FILE="/etc/slurm/.compute-initialized"
-      SLURM_VERSION="23.11.10"
+      SLURM_VERSION="25.11.2"
       
       if [[ -f "$MARKER_FILE" ]]; then
           echo "Slurm compute already initialized, skipping..."

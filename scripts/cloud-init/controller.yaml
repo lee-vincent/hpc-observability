@@ -44,7 +44,7 @@ write_files:
       exec > >(tee -a "$LOG_FILE") 2>&1
       
       MARKER_FILE="/etc/slurm/.controller-initialized"
-      SLURM_VERSION="23.11.10"
+      SLURM_VERSION="25.11.2"
       
       if [[ -f "$MARKER_FILE" ]]; then
           echo "Slurm controller already initialized, skipping..."
