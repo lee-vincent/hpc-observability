@@ -161,33 +161,33 @@ module "instances" {
   tags                        = local.common_tags
 }
 
-module "compute_asg" {
-  source = "./modules/asg"
+# module "compute_asg" {
+#   source = "./modules/asg"
 
-  name_prefix              = local.name_prefix
-  environment              = var.environment
-  private_subnet_id        = module.vpc.private_subnet_id
-  ami_id                   = data.aws_ami.ubuntu_24_04.id
-  keypair_name             = var.keypair_name
+#   name_prefix              = local.name_prefix
+#   environment              = var.environment
+#   private_subnet_id        = module.vpc.private_subnet_id
+#   ami_id                   = data.aws_ami.ubuntu_24_04.id
+#   keypair_name             = var.keypair_name
   
-  instance_type            = var.compute_instance_type
-  root_volume_size         = var.compute_root_volume_size
-  desired_capacity         = var.compute_node_count
-  min_size                 = var.compute_node_min
-  max_size                 = var.compute_node_max
+#   instance_type            = var.compute_instance_type
+#   root_volume_size         = var.compute_root_volume_size
+#   desired_capacity         = var.compute_node_count
+#   min_size                 = var.compute_node_min
+#   max_size                 = var.compute_node_max
   
-  security_group_id        = module.security.compute_sg_id
-  instance_profile_name    = module.iam.compute_instance_profile
+#   security_group_id        = module.security.compute_sg_id
+#   instance_profile_name    = module.iam.compute_instance_profile
   
-  controller_ip            = module.instances.controller_private_ip
-  bcm_ip                   = module.instances.bcm_private_ip
-  observability_ip         = module.instances.observability_private_ip
-  slurm_cluster_name       = var.slurm_cluster_name
-  project_name             = var.project_name
+#   controller_ip            = module.instances.controller_private_ip
+#   bcm_ip                   = module.instances.bcm_private_ip
+#   observability_ip         = module.instances.observability_private_ip
+#   slurm_cluster_name       = var.slurm_cluster_name
+#   project_name             = var.project_name
   
-  enable_spot              = var.enable_spot_instances
-  spot_max_price           = var.spot_max_price
-  scripts_path             = "${path.root}/../scripts"
+#   enable_spot              = var.enable_spot_instances
+#   spot_max_price           = var.spot_max_price
+#   scripts_path             = "${path.root}/../scripts"
   
-  tags                     = local.common_tags
-}
+#   tags                     = local.common_tags
+# }

@@ -107,9 +107,9 @@ Then open http://localhost:3000 (Grafana: admin / check SSM parameter)
 - **OS**: Ubuntu 22.04 LTS
 - **Slurm**: 23.11.10 (built from source)
 - **MariaDB**: Latest from Ubuntu repos
-- **Prometheus**: 2.48.0
+- **Prometheus**: 3.5.0
 - **Grafana**: Latest OSS
-- **Alertmanager**: 0.26.0
+- **Alertmanager**: 0.30.1
 - **NVIDIA Driver**: 535 (for T4)
 - **DCGM**: Latest from NVIDIA repos
 
