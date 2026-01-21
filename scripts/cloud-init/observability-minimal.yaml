@@ -1,0 +1,12 @@
+#cloud-config
+# Minimal cloud-init for manual debugging - no setup scripts
+
+hostname: ${hostname}
+fqdn: ${hostname}.local
+manage_etc_hosts: true
+
+package_update: false
+package_upgrade: false
+
+runcmd:
+  - echo "Minimal cloud-init completed at $(date)" > /var/log/cloud-init-minimal.log

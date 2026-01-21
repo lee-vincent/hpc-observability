@@ -142,7 +142,7 @@ resource "aws_instance" "observability" {
     delete_on_termination = true
   }
 
-  user_data = templatefile("${var.scripts_path}/cloud-init/observability.yaml", {
+  user_data = templatefile("${var.scripts_path}/cloud-init/${var.observability_cloud_init}", {
     hostname       = "observability"
     environment    = var.environment
     project_name   = var.project_name

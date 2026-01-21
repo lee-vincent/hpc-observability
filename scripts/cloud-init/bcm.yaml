@@ -204,9 +204,9 @@ write_files:
       exec > >(tee -a /var/log/demo-setup/bcm-init.log) 2>&1
       echo "=== BCM node initialization started at $(date) ==="
       
-      # Ensure SSM agent is running
-      systemctl enable amazon-ssm-agent
-      systemctl start amazon-ssm-agent
+      # Ensure SSM agent is running (may be snap or systemd depending on AMI)
+      systemctl enable amazon-ssm-agent 2>/dev/null || true
+      systemctl start amazon-ssm-agent 2>/dev/null || true
       
       # Install node_exporter
       NODE_EXPORTER_VERSION="1.7.0"

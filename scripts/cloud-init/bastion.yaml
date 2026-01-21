@@ -33,9 +33,9 @@ write_files:
       exec > >(tee -a /var/log/demo-setup/bastion-init.log) 2>&1
       echo "=== Bastion initialization started at $(date) ==="
       
-      # Ensure SSM agent is running
-      systemctl enable amazon-ssm-agent
-      systemctl start amazon-ssm-agent
+      # Ensure SSM agent is running (may be snap or systemd depending on AMI)
+      systemctl enable amazon-ssm-agent 2>/dev/null || true
+      systemctl start amazon-ssm-agent 2>/dev/null || true
       
       # Set timezone
       timedatectl set-timezone UTC

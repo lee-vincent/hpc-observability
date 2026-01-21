@@ -115,3 +115,9 @@ variable "scripts_path" {
   description = "Path to scripts directory"
   type        = string
 }
+
+variable "observability_cloud_init" {
+  description = "Cloud-init file to use for observability instance"
+  type        = string
+  default     = "observability.yaml"
+}

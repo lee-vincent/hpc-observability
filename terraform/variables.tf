@@ -70,6 +70,12 @@ variable "observability_instance_type" {
   default     = "t3.large"
 }
 
+variable "observability_cloud_init" {
+  description = "Cloud-init file to use for observability instance (use observability-minimal.yaml for debugging)"
+  type        = string
+  default     = "observability.yaml"
+}
+
 variable "compute_instance_type" {
   description = "Instance type for GPU compute nodes"
   type        = string
