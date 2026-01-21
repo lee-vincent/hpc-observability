@@ -30,10 +30,10 @@ output "bastion_instance_id" {
 #   value = aws_instance.db.id
 # }
 
-# output "observability_private_ip" {
-#   value = aws_instance.observability.private_ip
-# }
+output "observability_private_ip" {
+  value = aws_instance.observability.private_ip
+}
 
-# output "observability_instance_id" {
-#   value = aws_instance.observability.id
-# }
+output "observability_instance_id" {
+  value = aws_instance.observability.id
+}

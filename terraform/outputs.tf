@@ -23,10 +23,10 @@ output "bastion_instance_id" {
 #   value       = module.instances.db_private_ip
 # }
 
-# output "observability_private_ip" {
-#   description = "Private IP of Prometheus/Grafana instance"
-#   value       = module.instances.observability_private_ip
-# }
+output "observability_private_ip" {
+  description = "Private IP of Prometheus/Grafana instance"
+  value       = module.instances.observability_private_ip
+}
 
 output "vpc_id" {
   description = "VPC ID"
@@ -38,27 +38,27 @@ output "private_subnet_id" {
   value       = module.vpc.private_subnet_id
 }
 
-# output "grafana_access" {
-#   description = "How to access Grafana"
-#   value       = <<-EOT
-#     Via SSM port forward:
-#       aws ssm start-session --target ${module.instances.bastion_instance_id} \
-#         --document-name AWS-StartPortForwardingSessionToRemoteHost \
-#         --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["3000"],"localPortNumber":["3000"]}'
-#     Then open: http://localhost:3000 (admin/admin initially, change on first login)
-#   EOT
-# }
+output "grafana_access" {
+  description = "How to access Grafana"
+  value       = <<-EOT
+    Via SSM port forward:
+      aws ssm start-session --target ${module.instances.bastion_instance_id} \
+        --document-name AWS-StartPortForwardingSessionToRemoteHost \
+        --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["3000"],"localPortNumber":["3000"]}'
+    Then open: http://localhost:3000 (admin/admin initially, change on first login)
+  EOT
+}
 
-# output "prometheus_access" {
-#   description = "How to access Prometheus"
-#   value       = <<-EOT
-#     Via SSM port forward:
-#       aws ssm start-session --target ${module.instances.bastion_instance_id} \
-#         --document-name AWS-StartPortForwardingSessionToRemoteHost \
-#         --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["9090"],"localPortNumber":["9090"]}'
-#     Then open: http://localhost:9090
-#   EOT
-# }
+output "prometheus_access" {
+  description = "How to access Prometheus"
+  value       = <<-EOT
+    Via SSM port forward:
+      aws ssm start-session --target ${module.instances.bastion_instance_id} \
+        --document-name AWS-StartPortForwardingSessionToRemoteHost \
+        --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["9090"],"localPortNumber":["9090"]}'
+    Then open: http://localhost:9090
+  EOT
+}
 
 # output "bcm_ui_access" {
 #   description = "How to access BCM web UI"

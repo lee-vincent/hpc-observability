@@ -45,8 +45,11 @@ write_files:
       cp prometheus-$${PROMETHEUS_VERSION}.linux-amd64/promtool /usr/local/bin/
       chown prometheus:prometheus /usr/local/bin/prometheus /usr/local/bin/promtool
       
-      cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/consoles /etc/prometheus/
-      cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/console_libraries /etc/prometheus/
+      # Note: Prometheus 3.x removed consoles and console_libraries
+      if [[ -d prometheus-$${PROMETHEUS_VERSION}.linux-amd64/consoles ]]; then
+        cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/consoles /etc/prometheus/
+        cp -r prometheus-$${PROMETHEUS_VERSION}.linux-amd64/console_libraries /etc/prometheus/
+      fi
       chown -R prometheus:prometheus /etc/prometheus
       
       echo "=== Prometheus installation completed at $(date) ==="
@@ -421,49 +424,56 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /opt/hpc-obs/scripts/init-observability.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      mkdir -p /var/log/demo-setup /etc/prometheus/rules
+      exec > >(tee -a /var/log/demo-setup/observability-init.log) 2>&1
+      echo "=== Observability node initialization started at $(date) ==="
+      
+      # Ensure SSM agent is running
+      systemctl enable amazon-ssm-agent
+      systemctl start amazon-ssm-agent
+      
+      # Install node_exporter
+      NODE_EXPORTER_VERSION="1.7.0"
+      cd /tmp
+      wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+      
+      useradd --no-create-home --shell /bin/false node_exporter || true
+      chown node_exporter:node_exporter /usr/local/bin/node_exporter
+      
+      systemctl daemon-reload
+      systemctl enable node_exporter
+      systemctl start node_exporter
+      
+      # Setup Prometheus
+      /opt/hpc-obs/scripts/setup-prometheus.sh
+      
+      # Setup Grafana
+      /opt/hpc-obs/scripts/setup-grafana.sh
+      
+      # Setup Alertmanager
+      /opt/hpc-obs/scripts/setup-alertmanager.sh
+      
+      # Update prometheus config with correct region
+      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      sed -i "s/region: us-east-1/region: $AWS_REGION/g" /etc/prometheus/prometheus.yml || true
+      
+      # Fix ownership
+      chown -R prometheus:prometheus /etc/prometheus /var/lib/prometheus || true
+      
+      # Start services
+      systemctl daemon-reload
+      systemctl enable prometheus
+      systemctl start prometheus
+      
+      echo "=== Observability node initialization completed at $(date) ==="
+
 runcmd:
-  - mkdir -p /var/log/demo-setup /etc/prometheus/rules
-  - |
-    exec > >(tee -a /var/log/demo-setup/observability-init.log) 2>&1
-    echo "=== Observability node initialization started at $(date) ==="
-    
-    # Ensure SSM agent is running
-    systemctl enable amazon-ssm-agent
-    systemctl start amazon-ssm-agent
-    
-    # Install node_exporter
-    NODE_EXPORTER_VERSION="1.7.0"
-    cd /tmp
-    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
-    
-    useradd --no-create-home --shell /bin/false node_exporter || true
-    chown node_exporter:node_exporter /usr/local/bin/node_exporter
-    
-    systemctl daemon-reload
-    systemctl enable node_exporter
-    systemctl start node_exporter
-    
-    # Setup Prometheus
-    /opt/hpc-obs/scripts/setup-prometheus.sh
-    
-    # Setup Grafana
-    /opt/hpc-obs/scripts/setup-grafana.sh
-    
-    # Setup Alertmanager
-    /opt/hpc-obs/scripts/setup-alertmanager.sh
-    
-    # Update prometheus config with correct region
-    AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-    sed -i "s/region: us-east-1/region: $AWS_REGION/g" /etc/prometheus/prometheus.yml
-    
-    # Fix ownership
-    chown -R prometheus:prometheus /etc/prometheus /var/lib/prometheus
-    
-    # Start services
-    systemctl daemon-reload
-    systemctl enable prometheus
-    systemctl start prometheus
-    
-    echo "=== Observability node initialization completed at $(date) ==="
+  - /opt/hpc-obs/scripts/init-observability.sh

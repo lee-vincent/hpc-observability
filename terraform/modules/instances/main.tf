@@ -128,35 +128,36 @@ resource "aws_instance" "bastion" {
 #   }
 # }
 
-# resource "aws_instance" "observability" {
-#   ami                    = var.ami_id
-#   instance_type          = var.observability_instance_type
-#   subnet_id              = var.private_subnet_id
-#   vpc_security_group_ids = [var.observability_sg_id]
-#   iam_instance_profile   = var.observability_instance_profile
-#   key_name               = var.keypair_name != "" ? var.keypair_name : null
+resource "aws_instance" "observability" {
+  ami                    = var.ami_id
+  instance_type          = var.observability_instance_type
+  subnet_id              = var.private_subnet_id
+  vpc_security_group_ids = [var.observability_sg_id]
+  iam_instance_profile   = var.observability_instance_profile
+  key_name               = var.keypair_name != "" ? var.keypair_name : null
 
-#   root_block_device {
-#     volume_type           = "gp3"
-#     volume_size           = 100
-#     delete_on_termination = true
-#   }
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 100
+    delete_on_termination = true
+  }
 
-#   user_data = templatefile("${var.scripts_path}/cloud-init/observability.yaml", {
-#     hostname       = "observability"
-#     environment    = var.environment
-#     project_name   = var.project_name
-#     controller_ip  = aws_instance.controller.private_ip
-#   })
+  user_data = templatefile("${var.scripts_path}/cloud-init/observability.yaml", {
+    hostname       = "observability"
+    environment    = var.environment
+    project_name   = var.project_name
+    # controller_ip  = aws_instance.controller.private_ip
+    controller_ip  = "10.1.255.254"  # Placeholder - update when controller is deployed
+  })
 
-#   tags = merge(var.tags, {
-#     Name = "${var.name_prefix}-observability"
-#     Role = "observability"
-#   })
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-observability"
+    Role = "observability"
+  })
 
-#   lifecycle {
-#     ignore_changes = [ami]
-#   }
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
-#   depends_on = [aws_instance.controller]
-# }
+  # depends_on = [aws_instance.controller]  # Uncomment when controller is deployed
+}

@@ -269,54 +269,61 @@ write_files:
       
       echo "=== DCGM Exporter installation completed at $(date) ==="
 
+  - path: /opt/hpc-obs/scripts/init-compute.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a /var/log/demo-setup/compute-init.log) 2>&1
+      echo "=== Compute node initialization started at $(date) ==="
+      
+      # Ensure SSM agent is running
+      systemctl enable amazon-ssm-agent
+      systemctl start amazon-ssm-agent
+      
+      # Install node_exporter
+      NODE_EXPORTER_VERSION="1.7.0"
+      cd /tmp
+      wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+      
+      useradd --no-create-home --shell /bin/false node_exporter || true
+      chown node_exporter:node_exporter /usr/local/bin/node_exporter
+      
+      systemctl daemon-reload
+      systemctl enable node_exporter
+      systemctl start node_exporter
+      
+      # Install NVIDIA drivers
+      /opt/hpc-obs/scripts/setup-nvidia.sh
+      
+      # Check if reboot needed
+      if ! nvidia-smi &>/dev/null; then
+          echo "NVIDIA driver installed but not loaded, scheduling reboot..."
+          # Create script to continue setup after reboot
+          cat > /var/lib/cloud/scripts/per-boot/continue-setup.sh << 'REBOOTSCRIPT'
+      #!/bin/bash
+      if [[ -f /etc/slurm/.compute-initialized ]]; then
+          rm -f /var/lib/cloud/scripts/per-boot/continue-setup.sh
+          exit 0
+      fi
+      sleep 30
+      /opt/hpc-obs/scripts/setup-slurm-compute.sh
+      /opt/hpc-obs/scripts/install-dcgm-exporter.sh
+      rm -f /var/lib/cloud/scripts/per-boot/continue-setup.sh
+      REBOOTSCRIPT
+          chmod +x /var/lib/cloud/scripts/per-boot/continue-setup.sh
+          reboot
+      else
+          # Driver already loaded, continue setup
+          /opt/hpc-obs/scripts/setup-slurm-compute.sh
+          /opt/hpc-obs/scripts/install-dcgm-exporter.sh
+      fi
+      
+      echo "=== Compute node initialization completed at $(date) ==="
+
 runcmd:
-  - mkdir -p /var/log/demo-setup
-  - |
-    exec > >(tee -a /var/log/demo-setup/compute-init.log) 2>&1
-    echo "=== Compute node initialization started at $(date) ==="
-    
-    # Ensure SSM agent is running
-    systemctl enable amazon-ssm-agent
-    systemctl start amazon-ssm-agent
-    
-    # Install node_exporter
-    NODE_EXPORTER_VERSION="1.7.0"
-    cd /tmp
-    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
-    
-    useradd --no-create-home --shell /bin/false node_exporter || true
-    chown node_exporter:node_exporter /usr/local/bin/node_exporter
-    
-    systemctl daemon-reload
-    systemctl enable node_exporter
-    systemctl start node_exporter
-    
-    # Install NVIDIA drivers
-    /opt/hpc-obs/scripts/setup-nvidia.sh
-    
-    # Check if reboot needed
-    if ! nvidia-smi &>/dev/null; then
-        echo "NVIDIA driver installed but not loaded, scheduling reboot..."
-        # Create script to continue setup after reboot
-        cat > /var/lib/cloud/scripts/per-boot/continue-setup.sh << 'REBOOTSCRIPT'
-    #!/bin/bash
-    if [[ -f /etc/slurm/.compute-initialized ]]; then
-        rm -f /var/lib/cloud/scripts/per-boot/continue-setup.sh
-        exit 0
-    fi
-    sleep 30
-    /opt/hpc-obs/scripts/setup-slurm-compute.sh
-    /opt/hpc-obs/scripts/install-dcgm-exporter.sh
-    rm -f /var/lib/cloud/scripts/per-boot/continue-setup.sh
-    REBOOTSCRIPT
-        chmod +x /var/lib/cloud/scripts/per-boot/continue-setup.sh
-        reboot
-    else
-        # Driver already loaded, continue setup
-        /opt/hpc-obs/scripts/setup-slurm-compute.sh
-        /opt/hpc-obs/scripts/install-dcgm-exporter.sh
-    fi
-    
-    echo "=== Compute node initialization completed at $(date) ==="
+  - /opt/hpc-obs/scripts/init-compute.sh

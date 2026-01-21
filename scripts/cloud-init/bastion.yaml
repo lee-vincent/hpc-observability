@@ -23,17 +23,25 @@ write_files:
     content: |
       export AWS_DEFAULT_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 
+  - path: /opt/hpc-obs/scripts/init-bastion.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a /var/log/demo-setup/bastion-init.log) 2>&1
+      echo "=== Bastion initialization started at $(date) ==="
+      
+      # Ensure SSM agent is running
+      systemctl enable amazon-ssm-agent
+      systemctl start amazon-ssm-agent
+      
+      # Set timezone
+      timedatectl set-timezone UTC
+      
+      echo "=== Bastion initialization completed at $(date) ==="
+
 runcmd:
-  - mkdir -p /var/log/demo-setup
-  - |
-    exec > >(tee -a /var/log/demo-setup/bastion-init.log) 2>&1
-    echo "=== Bastion initialization started at $(date) ==="
-    
-    # Ensure SSM agent is running
-    systemctl enable amazon-ssm-agent
-    systemctl start amazon-ssm-agent
-    
-    # Set timezone
-    timedatectl set-timezone UTC
-    
-    echo "=== Bastion initialization completed at $(date) ==="
+  - mkdir -p /opt/hpc-obs/scripts
+  - /opt/hpc-obs/scripts/init-bastion.sh

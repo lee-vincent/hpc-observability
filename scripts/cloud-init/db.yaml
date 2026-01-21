@@ -94,31 +94,38 @@ write_files:
       [Install]
       WantedBy=multi-user.target
 
+  - path: /opt/hpc-obs/scripts/init-db.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      
+      mkdir -p /var/log/demo-setup
+      exec > >(tee -a /var/log/demo-setup/db-init.log) 2>&1
+      echo "=== DB node initialization started at $(date) ==="
+      
+      # Ensure SSM agent is running
+      systemctl enable amazon-ssm-agent
+      systemctl start amazon-ssm-agent
+      
+      # Install node_exporter
+      NODE_EXPORTER_VERSION="1.7.0"
+      cd /tmp
+      wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
+      cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
+      
+      useradd --no-create-home --shell /bin/false node_exporter || true
+      chown node_exporter:node_exporter /usr/local/bin/node_exporter
+      
+      systemctl daemon-reload
+      systemctl enable node_exporter
+      systemctl start node_exporter
+      
+      # Run DB setup
+      /opt/hpc-obs/scripts/setup-db.sh
+      
+      echo "=== DB node initialization completed at $(date) ==="
+
 runcmd:
-  - mkdir -p /var/log/demo-setup
-  - |
-    exec > >(tee -a /var/log/demo-setup/db-init.log) 2>&1
-    echo "=== DB node initialization started at $(date) ==="
-    
-    # Ensure SSM agent is running
-    systemctl enable amazon-ssm-agent
-    systemctl start amazon-ssm-agent
-    
-    # Install node_exporter
-    NODE_EXPORTER_VERSION="1.7.0"
-    cd /tmp
-    wget -q https://github.com/prometheus/node_exporter/releases/download/v$${NODE_EXPORTER_VERSION}/node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    tar xzf node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64.tar.gz
-    cp node_exporter-$${NODE_EXPORTER_VERSION}.linux-amd64/node_exporter /usr/local/bin/
-    
-    useradd --no-create-home --shell /bin/false node_exporter || true
-    chown node_exporter:node_exporter /usr/local/bin/node_exporter
-    
-    systemctl daemon-reload
-    systemctl enable node_exporter
-    systemctl start node_exporter
-    
-    # Run DB setup
-    /opt/hpc-obs/scripts/setup-db.sh
-    
-    echo "=== DB node initialization completed at $(date) ==="
+  - /opt/hpc-obs/scripts/init-db.sh
