@@ -6,13 +6,13 @@ output "bastion_instance_id" {
   value = aws_instance.bastion.id
 }
 
-# output "bcm_private_ip" {
-#   value = aws_instance.bcm.private_ip
-# }
+output "bcm_private_ip" {
+  value = aws_instance.bcm.private_ip
+}
 
-# output "bcm_instance_id" {
-#   value = aws_instance.bcm.id
-# }
+output "bcm_instance_id" {
+  value = aws_instance.bcm.id
+}
 
 # output "controller_private_ip" {
 #   value = aws_instance.controller.private_ip

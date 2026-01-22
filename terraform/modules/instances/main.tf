@@ -27,40 +27,40 @@ resource "aws_instance" "bastion" {
   }
 }
 
-# resource "aws_instance" "bcm" {
-#   ami                    = var.ami_id
-#   instance_type          = var.bcm_instance_type
-#   subnet_id              = var.private_subnet_id
-#   vpc_security_group_ids = [var.bcm_sg_id]
-#   iam_instance_profile   = var.bcm_instance_profile
-#   key_name               = var.keypair_name != "" ? var.keypair_name : null
+resource "aws_instance" "bcm" {
+  ami                    = var.ami_id
+  instance_type          = var.bcm_instance_type
+  subnet_id              = var.private_subnet_id
+  vpc_security_group_ids = [var.bcm_sg_id]
+  iam_instance_profile   = var.bcm_instance_profile
+  key_name               = var.keypair_name != "" ? var.keypair_name : null
 
-#   root_block_device {
-#     volume_type           = "gp3"
-#     volume_size           = 100
-#     delete_on_termination = true
-#   }
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 100
+    delete_on_termination = true
+  }
 
-#   user_data = templatefile("${var.scripts_path}/cloud-init/bcm.yaml", {
-#     hostname       = "bcm"
-#     environment    = var.environment
-#     project_name   = var.project_name
-#     cluster_name   = var.slurm_cluster_name
-#     controller_ip  = aws_instance.controller.private_ip
-#     db_ip          = aws_instance.db.private_ip
-#   })
+  user_data = templatefile("${var.scripts_path}/cloud-init/${var.bcm_cloud_init}", {
+    hostname       = "bcm"
+    environment    = var.environment
+    project_name   = var.project_name
+    cluster_name   = var.slurm_cluster_name
+    controller_ip  = "10.1.255.254"  # Placeholder - update when controller is deployed
+    db_ip          = "10.1.255.253"  # Placeholder - update when db is deployed
+  })
 
-#   tags = merge(var.tags, {
-#     Name = "${var.name_prefix}-bcm"
-#     Role = "bcm"
-#   })
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-bcm"
+    Role = "bcm"
+  })
 
-#   lifecycle {
-#     ignore_changes = [ami]
-#   }
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
-#   depends_on = [aws_instance.controller, aws_instance.db]
-# }
+  # depends_on = [aws_instance.controller, aws_instance.db]  # Uncomment when controller/db are deployed
+}
 
 # resource "aws_instance" "controller" {
 #   ami                    = var.ami_id

@@ -76,6 +76,12 @@ variable "observability_cloud_init" {
   default     = "observability.yaml"
 }
 
+variable "bcm_cloud_init" {
+  description = "Cloud-init file to use for BCM instance (use bcm-minimal.yaml for debugging)"
+  type        = string
+  default     = "bcm-minimal.yaml"
+}
+
 variable "compute_instance_type" {
   description = "Instance type for GPU compute nodes"
   type        = string

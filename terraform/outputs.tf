@@ -8,10 +8,10 @@ output "bastion_instance_id" {
   value       = module.instances.bastion_instance_id
 }
 
-# output "bcm_private_ip" {
-#   description = "Private IP of BCM head node"
-#   value       = module.instances.bcm_private_ip
-# }
+output "bcm_private_ip" {
+  description = "Private IP of BCM head node"
+  value       = module.instances.bcm_private_ip
+}
 
 # output "controller_private_ip" {
 #   description = "Private IP of Slurm controller"
@@ -62,16 +62,17 @@ aws ssm start-session --target ${module.instances.bastion_instance_id} --documen
 EOT
 }
 
-# output "bcm_ui_access" {
-#   description = "How to access BCM web UI"
-#   value       = <<-EOT
-#     Via SSM port forward:
-#       aws ssm start-session --target ${module.instances.bastion_instance_id} \
-#         --document-name AWS-StartPortForwardingSessionToRemoteHost \
-#         --parameters '{"host":["${module.instances.bcm_private_ip}"],"portNumber":["8081"],"localPortNumber":["8081"]}'
-#     Then open: https://localhost:8081
-#   EOT
-# }
+output "bcm_ui_access" {
+  description = "How to access BCM web UI via SSM port forwarding. Open https://localhost:8081 after running."
+  value       = "aws ssm start-session --target ${module.instances.bastion_instance_id} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters '{\"host\":[\"${module.instances.bcm_private_ip}\"],\"portNumber\":[\"8081\"],\"localPortNumber\":[\"8081\"]}'"
+}
+
+output "bcm_ui_access_clean" {
+  description = "Clean copy-paste command for BCM UI SSM port forwarding"
+  value       = <<-EOT
+aws ssm start-session --target ${module.instances.bastion_instance_id} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters '{"host":["${module.instances.bcm_private_ip}"],"portNumber":["8081"],"localPortNumber":["8081"]}'
+EOT
+}
 
 # output "slurm_controller_hostname" {
 #   description = "Slurm controller hostname"
@@ -93,6 +94,12 @@ Host bastion-${var.project_name}
 
 Host observability-${var.project_name}
   HostName ${module.instances.observability_private_ip}
+  User ubuntu
+  IdentityFile ~/.ssh/your-key.pem
+  ProxyJump bastion-${var.project_name}
+
+Host bcm-${var.project_name}
+  HostName ${module.instances.bcm_private_ip}
   User ubuntu
   IdentityFile ~/.ssh/your-key.pem
   ProxyJump bastion-${var.project_name}

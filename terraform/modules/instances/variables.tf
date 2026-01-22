@@ -121,3 +121,9 @@ variable "observability_cloud_init" {
   type        = string
   default     = "observability.yaml"
 }
+
+variable "bcm_cloud_init" {
+  description = "Cloud-init file to use for BCM instance"
+  type        = string
+  default     = "bcm.yaml"
+}

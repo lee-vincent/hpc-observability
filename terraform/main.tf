@@ -158,6 +158,7 @@ module "instances" {
   project_name                = var.project_name
   scripts_path                = "${path.root}/../scripts"
   observability_cloud_init    = var.observability_cloud_init
+  bcm_cloud_init              = var.bcm_cloud_init
   
   tags                        = local.common_tags
 }

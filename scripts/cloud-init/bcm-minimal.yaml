@@ -1,0 +1,17 @@
+#cloud-config
+# Minimal cloud-init for BCM - for manual setup and testing
+hostname: ${hostname}
+fqdn: ${hostname}.hpc-obs.internal
+manage_etc_hosts: true
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - jq
+  - curl
+  - wget
+  - unzip
+
+runcmd:
+  - echo "BCM minimal cloud-init complete - ready for manual setup"
