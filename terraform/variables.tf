@@ -73,7 +73,7 @@ variable "observability_instance_type" {
 variable "observability_cloud_init" {
   description = "Cloud-init file to use for observability instance (use observability-minimal.yaml for debugging)"
   type        = string
-  default     = "observability-minimal.yaml"
+  default     = "observability.yaml"
 }
 
 variable "compute_instance_type" {
