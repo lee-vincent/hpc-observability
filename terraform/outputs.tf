@@ -81,6 +81,22 @@ output "ssm_connect_bastion" {
   value       = "aws ssm start-session --target ${module.instances.bastion_instance_id}"
 }
 
+output "ssh_config_snippet" {
+  description = "SSH config for access through bastion"
+  value       = <<-EOT
+    # Add to ~/.ssh/config
+    Host bastion-${var.project_name}
+      HostName ${module.instances.bastion_public_ip}
+      User ubuntu
+      IdentityFile ~/.ssh/your-key.pem
+
+    Host observability-${var.project_name}
+      HostName ${module.instances.observability_private_ip}
+      User ubuntu
+      ProxyJump bastion-${var.project_name}
+  EOT
+}
+
 # output "ssh_config_snippet" {
 #   description = "SSH config for access through bastion"
 #   value       = <<-EOT
