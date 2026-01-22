@@ -40,24 +40,12 @@ output "private_subnet_id" {
 
 output "grafana_access" {
   description = "How to access Grafana"
-  value       = <<-EOT
-    Via SSM port forward:
-      aws ssm start-session --target ${module.instances.bastion_instance_id} \
-        --document-name AWS-StartPortForwardingSessionToRemoteHost \
-        --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["3000"],"localPortNumber":["3000"]}'
-    Then open: http://localhost:3000 (admin/admin initially, change on first login)
-  EOT
+  value       = "aws ssm start-session --target ${module.instances.bastion_instance_id} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters '{\"host\":[\"${module.instances.observability_private_ip}\"],\"portNumber\":[\"3000\"],\"localPortNumber\":[\"3000\"]}'"
 }
 
 output "prometheus_access" {
   description = "How to access Prometheus"
-  value       = <<-EOT
-    Via SSM port forward:
-      aws ssm start-session --target ${module.instances.bastion_instance_id} \
-        --document-name AWS-StartPortForwardingSessionToRemoteHost \
-        --parameters '{"host":["${module.instances.observability_private_ip}"],"portNumber":["9090"],"localPortNumber":["9090"]}'
-    Then open: http://localhost:9090
-  EOT
+  value       = "aws ssm start-session --target ${module.instances.bastion_instance_id} --document-name AWS-StartPortForwardingSessionToRemoteHost --parameters '{\"host\":[\"${module.instances.observability_private_ip}\"],\"portNumber\":[\"9090\"],\"localPortNumber\":[\"9090\"]}'"
 }
 
 # output "bcm_ui_access" {
@@ -83,18 +71,7 @@ output "ssm_connect_bastion" {
 
 output "ssh_config_snippet" {
   description = "SSH config for access through bastion"
-  value       = <<-EOT
-    # Add to ~/.ssh/config
-    Host bastion-${var.project_name}
-      HostName ${module.instances.bastion_public_ip}
-      User ubuntu
-      IdentityFile ~/.ssh/your-key.pem
-
-    Host observability-${var.project_name}
-      HostName ${module.instances.observability_private_ip}
-      User ubuntu
-      ProxyJump bastion-${var.project_name}
-  EOT
+  value       = "Host bastion-${var.project_name}\n  HostName ${module.instances.bastion_public_ip}\n  User ubuntu\n  IdentityFile ~/.ssh/your-key.pem\n\nHost observability-${var.project_name}\n  HostName ${module.instances.observability_private_ip}\n  User ubuntu\n  ProxyJump bastion-${var.project_name}"
 }
 
 # output "ssh_config_snippet" {
