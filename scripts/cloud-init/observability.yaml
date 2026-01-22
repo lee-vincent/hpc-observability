@@ -7,10 +7,10 @@ package_update: true
 package_upgrade: true
 
 packages:
-  - awscli
   - jq
   - curl
   - wget
+  - unzip
   - apt-transport-https
   - software-properties-common
 
@@ -66,8 +66,12 @@ write_files:
       
       echo "=== Setting up Grafana at $(date) ==="
       
-      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
-      GRAFANA_PASSWORD=$(aws ssm get-parameter --name "/hpc-obs/${environment}/grafana/admin-password" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text)
+      # Get AWS region using IMDSv2
+      TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+      AWS_REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
+      
+      # Get Grafana password from SSM (fallback to 'admin' if not set)
+      GRAFANA_PASSWORD=$(aws ssm get-parameter --name "/hpc-obs/${environment}/grafana/admin-password" --with-decryption --region "$AWS_REGION" --query 'Parameter.Value' --output text 2>/dev/null || echo "admin")
       
       # Add Grafana repository
       wget -q -O /usr/share/keyrings/grafana.key https://apt.grafana.com/gpg.key
@@ -438,6 +442,12 @@ write_files:
       systemctl enable amazon-ssm-agent 2>/dev/null || true
       systemctl start amazon-ssm-agent 2>/dev/null || true
       
+      # Install AWS CLI v2 (not available via apt on Ubuntu 24.04)
+      cd /tmp
+      curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      unzip -q awscliv2.zip
+      ./aws/install
+      
       # Install node_exporter
       NODE_EXPORTER_VERSION="1.7.0"
       cd /tmp
@@ -461,8 +471,9 @@ write_files:
       # Setup Alertmanager
       /opt/hpc-obs/scripts/setup-alertmanager.sh
       
-      # Update prometheus config with correct region
-      AWS_REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+      # Update prometheus config with correct region (IMDSv2)
+      TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+      AWS_REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
       sed -i "s/region: us-east-1/region: $AWS_REGION/g" /etc/prometheus/prometheus.yml || true
       
       # Fix ownership
